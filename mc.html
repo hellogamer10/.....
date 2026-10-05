@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Minecraft Server Watcher V3</title>
+<style>
+body{margin:0;background:#111827;color:#f3f4f6;font-family:Segoe UI,Arial,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh}
+.card{background:#1f2937;padding:28px;border-radius:18px;width:460px;box-shadow:0 0 20px rgba(0,0,0,.4)}
+h2{margin:0 0 8px}
+#status{font-size:40px;font-weight:700;margin:18px 0}
+.online{color:#4ade80}.offline{color:#f87171}.checking{color:#fbbf24}
+.row{display:flex;justify-content:space-between;margin:8px 0}
+.progress{height:8px;background:#374151;border-radius:999px;overflow:hidden;margin:12px 0}
+#bar{height:100%;width:100%;background:#60a5fa}
+button{padding:10px 16px;border:none;border-radius:8px;background:#22c55e;color:#fff;cursor:pointer}
+small{color:#9ca3af}
+</style>
+</head>
+<body>
+<div class="card">
+<h2>Minecraft Server Watcher V3</h2>
+<div><b>Lallokaadda.aternos.me:20046</b></div>
+<div id="status" class="checking">🟡 Checking...</div>
+<div id="players">Players: -</div>
+<div class="row"><span>Next check</span><span id="count">5s</span></div>
+<div class="progress"><div id="bar"></div></div>
+<div class="row"><span>Last checked</span><span id="last">Never</span></div>
+<br>
+<button onclick="stopAlarm()">Stop Alarm</button>
+<br><br>
+<small>Checks every 5 seconds • Uses two APIs</small>
+</div>
+<script>
+const SERVER="Lallokaadda.aternos.me:20046";
+const INTERVAL=5000;
+let nextCheck=Date.now();
+let alarm=null;
+let remind=0;
+
+Notification.requestPermission();
+
+function beep(){
+ const ctx=new (window.AudioContext||window.webkitAudioContext)();
+ const o=ctx.createOscillator(),g=ctx.createGain();
+ o.type="sine";o.frequency.value=600;g.gain.value=0.03;
+ o.connect(g);g.connect(ctx.destination);o.start();
+ setTimeout(()=>{o.stop();ctx.close();},250);
+}
+function startAlarm(){ if(!alarm) alarm=setInterval(beep,1500);}
+function stopAlarm(){ if(alarm){clearInterval(alarm);alarm=null;}}
+
+async function fetch1(){
+ try{
+  let r=await fetch("https://api.mcsrvstat.us/3/"+SERVER,{cache:"no-store"});
+  let d=await r.json();
+  return {online:d.online===true,players:d.players?.online??0,max:d.players?.max??0};
+ }catch{return null;}
+}
+async function fetch2(){
+ try{
+  let r=await fetch("https://api.mcstatus.io/v2/status/java/"+SERVER,{cache:"no-store"});
+  let d=await r.json();
+  return {online:d.online===true,players:d.players?.online??0,max:d.players?.max??0};
+ }catch{return null;}
+}
+
+async function check(){
+ document.getElementById("status").textContent="🟡 Checking...";
+ document.getElementById("status").className="checking";
+ const [a,b]=await Promise.all([fetch1(),fetch2()]);
+ let online=false,players=0,max=0;
+ if(a&&b){ online=a.online&&b.online; players=a.players||b.players; max=a.max||b.max;}
+ else if(a){online=a.online;players=a.players;max=a.max;}
+ else if(b){online=b.online;players=b.players;max=b.max;}
+ const s=document.getElementById("status");
+ if(online){
+   s.textContent="🟢 ONLINE";
+   s.className="online";
+   document.getElementById("players").textContent=`Players: ${players} / ${max}`;
+   remind++;
+   if(remind>=3){
+      remind=0;
+      startAlarm();
+      if(Notification.permission==="granted"){
+        new Notification("Minecraft Server Online!",{body:"Your server is online."});
+      }
+   }
+ }else{
+   s.textContent="🔴 OFFLINE";
+   s.className="offline";
+   document.getElementById("players").textContent="Players: -";
+   remind=0;
+   stopAlarm();
+ }
+ document.getElementById("last").textContent=new Date().toLocaleTimeString();
+ nextCheck=Date.now()+INTERVAL;
+}
+
+setInterval(()=>{
+ const left=Math.max(0,Math.ceil((nextCheck-Date.now())/1000));
+ document.getElementById("count").textContent=left+"s";
+ document.getElementById("bar").style.width=(left/5*100)+"%";
+},200);
+
+check();
+setInterval(check,INTERVAL);
+</script>
+</body>
+</html>
